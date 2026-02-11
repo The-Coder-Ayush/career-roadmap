@@ -1,233 +1,217 @@
 import { useState, useEffect } from "react";
-import { FaPlus, FaTrash, FaCheckCircle, FaRegCircle, FaTasks, FaMagic, FaSpinner, FaLayerGroup } from "react-icons/fa";
+import { FaCheckCircle, FaRegCircle, FaMagic, FaLightbulb, FaTimes, FaRobot, FaTrash, FaMap } from "react-icons/fa";
+import ReactMarkdown from 'react-markdown'; 
+import LevelUpModal from "../components/LevelUpModal"; 
+import BadgeModal from "../components/BadgeModal"; 
+import API_URL from "../config"; // Import Config
 
 const Tasks = () => {
   const [tasks, setTasks] = useState([]);
   const [roadmaps, setRoadmaps] = useState([]);
-  const [selectedRoadmapIds, setSelectedRoadmapIds] = useState([]); 
-  const [input, setInput] = useState("");
+  const [selectedRoadmaps, setSelectedRoadmaps] = useState([]);
+  
+  // UI States
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  
+  // Helper Modal States
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalContent, setModalContent] = useState("");
+  const [modalLoading, setModalLoading] = useState(false);
 
+  // Gamification States
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(1);
+  const [currentLevel, setCurrentLevel] = useState(1);
+  
+  // Badge State
+  const [showBadge, setShowBadge] = useState(false);
+  const [earnedBadge, setEarnedBadge] = useState(null);
+
+  // Initial Data Fetch
   useEffect(() => {
     const fetchData = async () => {
       const token = localStorage.getItem("token");
+      if (!token) return;
+
       try {
-        const tasksRes = await fetch("http://localhost:5000/api/tasks", {
-          headers: { "x-auth-token": token },
-        });
+        const tasksRes = await fetch(`${API_URL}/tasks`, { headers: { "x-auth-token": token } });
         const tasksData = await tasksRes.json();
         setTasks(tasksData);
 
-        const mapsRes = await fetch("http://localhost:5000/api/roadmaps", {
-          headers: { "x-auth-token": token },
-        });
+        const mapsRes = await fetch(`${API_URL}/roadmaps`, { headers: { "x-auth-token": token } });
         const mapsData = await mapsRes.json();
         setRoadmaps(mapsData);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      } finally {
-        setLoading(false);
-      }
+        if (mapsData.length > 0) setSelectedRoadmaps(mapsData.map(m => m._id));
+
+        // Get initial user level
+        const userRes = await fetch(`${API_URL}/auth`, { headers: { "x-auth-token": token } });
+        const userData = await userRes.json();
+        if(userData) setCurrentLevel(userData.level);
+
+      } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchData();
   }, []);
 
+  // --- ACTIONS ---
+
   const toggleRoadmapSelection = (id) => {
-    setSelectedRoadmapIds(prev => {
-      if (prev.includes(id)) return prev.filter(item => item !== id);
-      return [...prev, id];
-    });
+    if (selectedRoadmaps.includes(id)) setSelectedRoadmaps(selectedRoadmaps.filter(r => r !== id));
+    else setSelectedRoadmaps([...selectedRoadmaps, id]);
   };
 
-  // --- ADD TASK (Manual) ---
-  const handleAddTask = async (e) => {
-    e.preventDefault();
-    if (!input.trim()) return;
-    // Manual tasks don't have a specific roadmap linked (or we could let user choose)
-    await saveTask(input, null); 
-    setInput("");
-  };
-
-  // --- SAVE TASK HELPER ---
-  const saveTask = async (text, roadmapId = null) => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/tasks", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-auth-token": token 
-        },
-        body: JSON.stringify({ text, roadmapId }), // Sending roadmapId to DB
-      });
-      const newTask = await response.json();
-      setTasks(prev => [newTask, ...prev]);
-    } catch (error) {
-      console.error("Error adding task:", error);
-    }
-  };
-
-  // --- GENERATE AI TASKS ---
-  const handleGenerateAiTasks = async () => {
-    if (selectedRoadmapIds.length === 0) {
-      alert("Please select at least one roadmap to focus on today.");
-      return;
-    }
-
+  const handleGenerate = async () => {
+    if (selectedRoadmaps.length === 0) return alert("Please select at least one roadmap!");
     setGenerating(true);
+    const token = localStorage.getItem("token");
+
     try {
-      const token = localStorage.getItem("token");
-      
-      const response = await fetch("http://localhost:5000/api/ai/suggest-tasks", {
+      const res = await fetch(`${API_URL}/ai/suggest-tasks`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-auth-token": token 
-        },
-        body: JSON.stringify({ roadmapIds: selectedRoadmapIds })
+        headers: { "Content-Type": "application/json", "x-auth-token": token },
+        body: JSON.stringify({ roadmapIds: selectedRoadmaps })
       });
+      const newTasksData = await res.json();
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        // Now handling errors gracefully without crashing
-        alert(data.msg || "Failed to generate tasks");
-        return;
+      const savedTasks = [];
+      for (const taskItem of newTasksData) {
+        const saveRes = await fetch(`${API_URL}/tasks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-auth-token": token },
+          body: JSON.stringify({ text: taskItem.text, roadmap: taskItem.roadmapId || selectedRoadmaps[0] })
+        });
+        savedTasks.push(await saveRes.json());
       }
-
-      // The AI now returns objects: { text: "Do X", roadmapId: "123" }
-      // We save them with their ID so the AI remembers them next time!
-      for (const item of data) {
-        await saveTask(item.text, item.roadmapId);
-      }
-
-      alert(`✨ Generated ${data.length} tasks tailored to your progress!`);
-
-    } catch (error) {
-      console.error("AI Gen Error:", error);
-      alert("Could not generate tasks. Check console for details.");
-    } finally {
-      setGenerating(false);
-    }
+      setTasks([...savedTasks, ...tasks]);
+    } catch (err) { console.error("Generation Error:", err); alert("Failed to generate tasks."); } finally { setGenerating(false); }
   };
 
-  const handleToggle = async (id) => {
-    const updatedTasks = tasks.map(t => t._id === id ? { ...t, isCompleted: !t.isCompleted } : t);
-    setTasks(updatedTasks);
+  const toggleTask = async (id) => {
+    const token = localStorage.getItem("token");
     try {
-      const token = localStorage.getItem("token");
-      await fetch(`http://localhost:5000/api/tasks/${id}`, { method: "PUT", headers: { "x-auth-token": token } });
-    } catch (error) { console.error(error); }
+      const res = await fetch(`${API_URL}/tasks/${id}`, {
+        method: "PUT",
+        headers: { "x-auth-token": token },
+      });
+      const data = await res.json(); 
+
+      setTasks(tasks.map(t => t._id === id ? { ...t, isCompleted: !t.isCompleted } : t));
+
+      // 1. Check Level Up
+      if (data.userLevel > currentLevel) {
+        setNewLevel(data.userLevel);
+        setCurrentLevel(data.userLevel);
+        setShowLevelUp(true);
+      }
+
+      // 2. Check New Badge
+      if (data.newBadge && data.newBadge.id) {
+        setEarnedBadge(data.newBadge.id); 
+        setShowBadge(true);
+      }
+
+    } catch (err) { console.error(err); }
   };
 
-  const handleDelete = async (id) => {
+  const deleteTask = async (id) => {
+    const token = localStorage.getItem("token");
     try {
-      const token = localStorage.getItem("token");
-      await fetch(`http://localhost:5000/api/tasks/${id}`, { method: "DELETE", headers: { "x-auth-token": token } });
+      await fetch(`${API_URL}/tasks/${id}`, { method: "DELETE", headers: { "x-auth-token": token } });
       setTasks(tasks.filter(t => t._id !== id));
-    } catch (error) { console.error(error); }
+    } catch (err) { console.error(err); }
   };
+
+  const askAI = async (taskText) => {
+    setModalOpen(true);
+    setModalLoading(true);
+    setModalContent(""); 
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`${API_URL}/ai/help`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-auth-token": token },
+        body: JSON.stringify({ taskText, context: "Programming" })
+      });
+      const data = await res.json();
+      setModalContent(data.advice);
+    } catch (err) { setModalContent("Failed to get help."); } finally { setModalLoading(false); }
+  };
+
+  if (loading) return <div className="text-white text-center mt-20">Loading Mission Control...</div>;
 
   return (
-    <div className="min-h-screen text-white p-4 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        
-        <div className="mb-10 text-center">
-          <h1 className="text-4xl font-bold mb-2 flex items-center justify-center gap-3">
-            <span className="bg-cyan-500/20 p-2 rounded-xl text-cyan-400"><FaTasks /></span>
-            Smart Daily Manager
-          </h1>
-          <p className="text-gray-400">AI remembers your last task and plans the next step.</p>
+    <div className="min-h-screen p-4 md:p-12 text-white bg-[#0f172a] relative">
+      
+      {/* --- MODALS --- */}
+      {showLevelUp && <LevelUpModal newLevel={newLevel} onClose={() => setShowLevelUp(false)} />}
+      
+      {showBadge && <BadgeModal badgeKey={earnedBadge} onClose={() => setShowBadge(false)} />}
+
+      <div className="max-w-4xl mx-auto space-y-8">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3"><FaMagic className="text-cyan-400" /> Daily Mission Control</h1>
+          <p className="text-gray-400">Select roadmaps to generate a mixed daily schedule.</p>
         </div>
 
-        {/* AI GENERATOR SECTION */}
-        <div className="bg-[#1e293b] border border-white/10 rounded-2xl p-6 mb-10 shadow-xl">
-          <div className="flex items-center gap-2 mb-4">
-            <FaLayerGroup className="text-cyan-400" />
-            <h3 className="font-bold text-lg">Select Focus Areas for Today:</h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {roadmaps.length === 0 && <p className="text-gray-500 text-sm">No roadmaps found.</p>}
-            
+        <div className="bg-[#1e293b] border border-white/10 p-6 rounded-2xl shadow-xl">
+          <h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><FaMap className="text-cyan-400" /> Select Active Roadmaps</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-6">
             {roadmaps.map(map => {
-              const isSelected = selectedRoadmapIds.includes(map._id);
-              // Count how many tasks are completed for this roadmap (optional visual)
-              const completedSteps = map.steps.filter(s => s.completed).length;
-              
+              const isSelected = selectedRoadmaps.includes(map._id);
               return (
-                <div 
+                <button
                   key={map._id}
                   onClick={() => toggleRoadmapSelection(map._id)}
-                  className={`cursor-pointer p-4 rounded-xl border transition-all flex items-center justify-between
-                    ${isSelected 
-                      ? "bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.1)]" 
-                      : "bg-black/20 border-white/5 hover:bg-white/5"
-                    }
-                  `}
+                  className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between group ${isSelected ? "bg-cyan-900/20 border-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.15)]" : "bg-black/20 border-white/10 text-gray-400 hover:bg-white/5"}`}
                 >
-                  <div>
-                    <h4 className={`font-bold ${isSelected ? "text-cyan-300" : "text-gray-400"}`}>{map.title}</h4>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Current Step: <span className="text-gray-300">{map.steps.find(s => !s.completed)?.title || "Done"}</span>
-                    </p>
-                  </div>
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center
-                    ${isSelected ? "bg-cyan-500 border-cyan-500" : "border-gray-500"}
-                  `}>
-                    {isSelected && <FaCheckCircle className="text-black text-sm" />}
-                  </div>
-                </div>
+                  <span className="truncate font-medium">{map.title}</span>
+                  {isSelected && <FaCheckCircle className="text-cyan-400" />}
+                </button>
               );
             })}
           </div>
-
-          <button
-            onClick={handleGenerateAiTasks}
-            disabled={generating || roadmaps.length === 0 || selectedRoadmapIds.length === 0}
-            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:scale-[1.02] active:scale-[0.98] transition-all text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {generating ? <FaSpinner className="animate-spin text-xl" /> : <FaMagic className="text-xl" />}
-            {generating ? "Reviewing History & Generating Tasks..." : "Generate Next Logical Tasks"}
+          <button onClick={handleGenerate} disabled={generating || selectedRoadmaps.length === 0} className={`w-full md:w-auto px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${generating ? "bg-gray-600 cursor-not-allowed" : "bg-gradient-to-r from-cyan-600 to-blue-600 hover:scale-105 shadow-lg shadow-cyan-500/20 text-white"}`}>
+            {generating ? "Generating..." : <><FaMagic /> Generate Daily Plan ({selectedRoadmaps.length})</>}
           </button>
         </div>
 
-        {/* Task List */}
-        <div className="space-y-3">
-          <h3 className="text-xl font-bold mb-4 border-b border-white/10 pb-2">Your Schedule</h3>
-          
-          <form onSubmit={handleAddTask} className="flex gap-2 mb-6">
-             <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Add a custom task..."
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50"
-            />
-            <button type="submit" disabled={!input.trim()} className="bg-gray-700 hover:bg-gray-600 px-6 rounded-lg font-bold transition-colors">
-              <FaPlus />
-            </button>
-          </form>
-
-          {tasks.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">Your schedule is clear.</p>
-          ) : (
-            tasks.map((task) => (
-              <div key={task._id} className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-300 group ${task.isCompleted ? "bg-green-500/5 border-green-500/20 opacity-60" : "bg-white/5 border-white/10"}`}>
-                <div className="flex items-center gap-4 flex-1">
-                  <button onClick={() => handleToggle(task._id)} className={`text-xl transition-all ${task.isCompleted ? "text-green-500" : "text-gray-500 hover:text-cyan-400"}`}>
-                    {task.isCompleted ? <FaCheckCircle /> : <FaRegCircle />}
-                  </button>
-                  <span className={`${task.isCompleted ? "line-through text-gray-500" : "text-white"}`}>{task.text}</span>
-                </div>
-                <button onClick={() => handleDelete(task._id)} className="text-gray-600 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100"><FaTrash /></button>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-white mb-4">Your Active Quests</h2>
+          {tasks.length === 0 ? <div className="text-center py-10 text-gray-500 bg-white/5 rounded-2xl border border-white/5 border-dashed">No active tasks.</div> : tasks.map((task) => (
+            <div key={task._id} className={`group bg-[#1e293b] border border-white/10 p-4 md:p-6 rounded-2xl flex flex-col md:flex-row md:items-center gap-4 transition-all hover:border-cyan-500/50 ${task.isCompleted ? "opacity-50" : ""}`}>
+              <div className="flex items-start gap-4 flex-1">
+                <button onClick={() => toggleTask(task._id)} className="text-2xl mt-1 text-gray-500 hover:text-green-400 transition-colors shrink-0">
+                  {task.isCompleted ? <FaCheckCircle className="text-green-500" /> : <FaRegCircle />}
+                </button>
+                <p className={`text-lg break-words ${task.isCompleted ? "line-through text-gray-500" : "text-white"}`}>{task.text}</p>
               </div>
-            ))
-          )}
+              <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0">
+                {!task.isCompleted && <button onClick={() => askAI(task.text)} className="flex-1 md:flex-none text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all"><FaLightbulb /> Help</button>}
+                <button onClick={() => deleteTask(task._id)} className="text-gray-500 hover:text-red-400 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-all"><FaTrash /></button>
+              </div>
+            </div>
+          ))}
         </div>
-
       </div>
+      
+      {/* Helper Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-[#1e293b] border border-white/20 rounded-2xl w-[95%] md:max-w-2xl max-h-[85vh] flex flex-col relative shadow-2xl">
+            <div className="flex justify-between items-center p-6 border-b border-white/10">
+              <h3 className="text-xl font-bold flex items-center gap-2 text-cyan-400"><FaRobot /> AI Mentor</h3>
+              <button onClick={() => setModalOpen(false)} className="text-gray-400 hover:text-white p-2"><FaTimes className="text-xl" /></button>
+            </div>
+            <div className="p-6 overflow-y-auto text-gray-300 leading-relaxed custom-scrollbar">
+              {modalLoading ? <p className="animate-pulse text-center">Analyzing...</p> : <div className="prose prose-invert max-w-none"><ReactMarkdown>{modalContent}</ReactMarkdown></div>}
+            </div>
+            <div className="p-4 border-t border-white/10 text-right bg-[#1e293b] rounded-b-2xl">
+              <button onClick={() => setModalOpen(false)} className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl font-bold">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

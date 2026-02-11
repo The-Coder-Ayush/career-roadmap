@@ -31,10 +31,11 @@ mongoose
   .catch(err => console.log('❌ DB Error:', err));
 
 // Routes
+app.use('/api/roadmaps', require('./routes/roadmaps'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/ai', require('./routes/ai'));
-app.use('/api/roadmaps', require('./routes/roadmaps'))
+
 app.use('/api/tasks', require('./routes/tasks'));;
 
 const PORT = process.env.PORT || 5000;

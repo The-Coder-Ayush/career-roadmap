@@ -3,22 +3,43 @@ const mongoose = require('mongoose');
 const UserSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
+    required: true
   },
   email: {
     type: String,
     required: true,
-    unique: true,
+    unique: true
   },
   password: {
     type: String,
-    required: true,
+    required: true
   },
-  // We will store the AI roadmap here later!
-  careerGoal: {
-    type: String,
-    default: '', 
+  xp: {
+    type: Number,
+    default: 0
   },
-}, { timestamps: true });
+  level: {
+    type: Number,
+    default: 1
+  },
+  // --- NEW STREAK FIELDS ---
+  streak: {
+    type: Number,
+    default: 0
+  },
+  lastActiveDate: {
+    type: Date,
+    default: null
+  },
+  badges: { 
+    type: [String], 
+    default: [] 
+  },
+  // -------------------------
+  date: {
+    type: Date,
+    default: Date.now
+  }
+});
 
-module.exports = mongoose.model('User', UserSchema);
+module.exports = mongoose.model('user', UserSchema);

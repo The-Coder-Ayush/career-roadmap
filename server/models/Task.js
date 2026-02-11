@@ -6,7 +6,7 @@ const TaskSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  // This field is REQUIRED for the new feature
+  // This field is REQUIRED
   roadmap: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Roadmap',

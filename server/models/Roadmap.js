@@ -10,18 +10,23 @@ const RoadmapSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  summary: String,
-  salary_range: String,
-  growth_score: Number,
+  summary: {
+    type: String
+  },
+  salary_range: {
+    type: String
+  },
+  growth_score: {
+    type: Number
+  },
   steps: [
     {
-      step_number: Number,
-      title: String,
-      description: String,
-      duration: String,
-      resources: [String],
-      completed: { type: Boolean, default: false } // We will use this later for tracking!
-    }
+      title: { type: String },
+      description: { type: String },
+      duration: { type: String },
+      resources: [{ type: String }], // Array of strings for links/topics
+       completed: { type: Boolean, default: false }
+       }
   ],
   createdAt: {
     type: Date,
