@@ -3,6 +3,6 @@ const isLocal = window.location.hostname === "localhost" || window.location.host
 
 const API_URL = isLocal 
   ? "http://localhost:5000/api" 
-  : "https://your-careerai-backend.onrender.com/api"; // You will update this URL after deploying the backend
+  : "https://career-roadmap-tri3.onrender.com/api"; // Updated with your actual Render Backend URL
 
 export default API_URL;
